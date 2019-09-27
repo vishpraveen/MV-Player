@@ -1,12 +1,21 @@
 package com.example.mvplayer
 
 import android.annotation.SuppressLint
+import android.database.Cursor
 import android.net.Uri
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.provider.MediaStore
+import android.view.Surface
 import android.view.View
+import android.widget.ProgressBar
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.example.mvplayer.utils.Utility
+import com.google.android.exoplayer2.*
+import com.google.android.exoplayer2.audio.AudioRendererEventListener
+import com.google.android.exoplayer2.decoder.DecoderCounters
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory
-import com.google.android.exoplayer2.source.ConcatenatingMediaSource
 import com.google.android.exoplayer2.source.ExtractorMediaSource
 import com.google.android.exoplayer2.source.MediaSource
 import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection
@@ -14,25 +23,15 @@ import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
 import com.google.android.exoplayer2.trackselection.TrackSelection
 import com.google.android.exoplayer2.ui.PlayerView
 import com.google.android.exoplayer2.upstream.DefaultBandwidthMeter
+import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory
 import com.google.android.exoplayer2.util.Util
-import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource
-import com.google.android.exoplayer2.source.dash.DashChunkSource
-import androidx.core.app.ComponentActivity.ExtraData
-import androidx.core.content.ContextCompat.getSystemService
-import android.icu.lang.UCharacter.GraphemeClusterBreak.T
-import android.view.Surface
-import android.widget.ProgressBar
-import com.google.android.exoplayer2.*
-import com.google.android.exoplayer2.audio.AudioRendererEventListener
-import com.google.android.exoplayer2.decoder.DecoderCounters
-import com.google.android.exoplayer2.source.dash.DashMediaSource
 import com.google.android.exoplayer2.video.VideoRendererEventListener
-import com.utils.Utility
 
 
-class PlayerActivity : AppCompatActivity() {
+class PlayerActivity : AppCompatActivity(), RecyclerViewClickListener {
     private val TAG = PlayerActivity::class.java.simpleName
+    private lateinit var listener: RecyclerViewClickListener
     private var playerView: PlayerView? = null
     var progressbar: ProgressBar? = null
     private var player: SimpleExoPlayer? = null
@@ -41,45 +40,85 @@ class PlayerActivity : AppCompatActivity() {
     private var playbackPosition = 0L
 
     private val BANDWIDTH_METER = DefaultBandwidthMeter()
+    private val videoList = ArrayList<VideoModel>()
+    private lateinit var rvVideoList: RecyclerView
+    private lateinit var videoAdapter: VideoAdapter
 
     private lateinit var componentListener: ComponentListener
+    private lateinit var uri: Uri
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
 //        ExoPlayer Listeners
         componentListener = ComponentListener()
-
+        listener = this
         initUI()
+        getAllVideos()
     }
 
-    inner class ComponentListener: Player.DefaultEventListener(), VideoRendererEventListener,
+    private fun getAllVideos() {
+        val projection =
+            arrayOf(MediaStore.Video.VideoColumns.DATA, MediaStore.Video.Media.TITLE)
+        val cursor: Cursor? = this@PlayerActivity.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            null,
+            null,
+            null
+        )
+        try {
+            cursor?.moveToFirst()
+            do {
+                val videoModel =VideoModel()
+                videoModel.videoName = cursor!!.getString(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA))
+                videoList.add(videoModel)
+            } while (cursor!!.moveToNext())
+            cursor.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        Utility.LogI(TAG, "Video Found: ${videoList.size}")
+        if (videoList.isNotEmpty()) {
+            for (items in videoList) {
+                Utility.LogI(TAG, "Video Name: $items")
+            }
+            videoAdapter.notifyDataSetChanged()
+        } else {
+            Utility.LogI(TAG, "No Videos Found")
+        }
+    }
+
+    inner class ComponentListener : Player.DefaultEventListener(), VideoRendererEventListener,
         AudioRendererEventListener {
         private val TAG = ComponentListener::class.java.simpleName
         override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) {
             val stateString: String
 
-            when(playbackState){
-                Player.STATE_IDLE ->{
+            when (playbackState) {
+                Player.STATE_IDLE -> {
                     stateString = "Player.STATE_IDLE            -"
                 }
-                Player.STATE_BUFFERING ->{
+                Player.STATE_BUFFERING -> {
                     stateString = "Player.STATE_BUFFERING       -"
                     progressbar?.visibility = View.VISIBLE
                 }
-                Player.STATE_READY ->{
+                Player.STATE_READY -> {
                     stateString = "Player.STATE_READY           -"
                     progressbar?.visibility = View.GONE
                 }
-                Player.STATE_ENDED ->{
+                Player.STATE_ENDED -> {
                     stateString = "Player.STATE_ENDED           -"
                 }
-                else ->{
+                else -> {
                     stateString = "UNKNOWN_STATE                -"
                 }
             }
-            Utility.LogI(TAG, "changed state to " + stateString
-                    + " playWhenReady: " + playWhenReady)
+            Utility.LogI(
+                TAG, "changed state to " + stateString
+                        + " playWhenReady: " + playWhenReady
+            )
         }
 
         override fun onDroppedFrames(count: Int, elapsedMs: Long) {
@@ -228,9 +267,11 @@ class PlayerActivity : AppCompatActivity() {
             /*
             * Adding the media url to the player
             * */
-            val uri = Uri.parse(getString(R.string.media_url_mp4))
-            val mediaSource = buildMediaSource(uri)
-            player!!.prepare(mediaSource, true, false)
+//            uri = Uri.parse(getString(R.string.media_url_mp4))
+            if (::uri.isInitialized){
+                val mediaSource = buildMediaSource(uri)
+                player!!.prepare(mediaSource, true, false)
+            }
         }
     }
 
@@ -240,32 +281,52 @@ class PlayerActivity : AppCompatActivity() {
         val dataSourceFactory = DefaultHttpDataSourceFactory("user-agent")
 
 //        Dash Media Source Link
-        val dashUri = Uri.parse(getString(R.string.media_url_dash))
+        /*val dashUri = Uri.parse(getString(R.string.media_url_dash))
         val manifestDataSourceFactory = DefaultHttpDataSourceFactory("ua")
         val dashChunkSourceFactory = DefaultDashChunkSource.Factory(
             DefaultHttpDataSourceFactory("ua", BANDWIDTH_METER)
         )
-        val dashSource = DashMediaSource.Factory(dashChunkSourceFactory,manifestDataSourceFactory).createMediaSource(dashUri)
+        val dashSource = DashMediaSource.Factory(dashChunkSourceFactory, manifestDataSourceFactory)
+            .createMediaSource(dashUri)*/
 
 //        .Mp4 Media Source Link
-        val videoSource = ExtractorMediaSource.Factory(
+        /*val videoSource = ExtractorMediaSource.Factory(
             DefaultHttpDataSourceFactory("exoplayer-codelab")
-        ).createMediaSource(uri)
+        ).createMediaSource(uri)*/
 
 //        .Mp3 Media Source Link
-        val audioUri = Uri.parse(getString(R.string.song_mp3))
+       /* val audioUri = Uri.parse(getString(R.string.song_mp3))
         val audioSource = ExtractorMediaSource.Factory(
             DefaultHttpDataSourceFactory("exoplayer-codelab")
-        ).createMediaSource(audioUri)
+        ).createMediaSource(audioUri)*/
 
-        return ConcatenatingMediaSource(audioSource, videoSource)
-        /* return ExtractorMediaSource.Factory(
-             DefaultHttpDataSourceFactory("exoplayer-codelab")
-         ).createMediaSource(uri)*/
+//        return ConcatenatingMediaSource(audioSource, videoSource)
+
+         return ExtractorMediaSource.Factory(
+             DefaultDataSourceFactory(this@PlayerActivity,"exoplayer-codelab")
+         ).createMediaSource(uri)
     }
 
     private fun initUI() {
         playerView = findViewById(R.id.video_view)
         progressbar = findViewById(R.id.progressbar)
+
+        rvVideoList = findViewById(R.id.rvVideoList)
+        setRecyclerView()
+    }
+
+    private fun setRecyclerView() {
+        val layout = GridLayoutManager(rvVideoList.context,2)
+        rvVideoList.layoutManager = layout
+        videoAdapter = VideoAdapter(videoList, listener)
+        rvVideoList.adapter = videoAdapter
+    }
+
+    override fun onClick(where: EnumClicks, position: Int) {
+        val item = videoList[position]
+        uri = Uri.parse("file://"+item.videoName)
+        releasePlayer()
+        initializePlayer()
+        Utility.ToastDebug(this@PlayerActivity, "Clicked On: $uri")
     }
 }
