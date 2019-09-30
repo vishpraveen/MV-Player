@@ -7,6 +7,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.cardview.widget.CardView
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
 
 class VideoAdapter(val videoList: ArrayList<VideoModel>, val listener: RecyclerViewClickListener) :
     RecyclerView.Adapter<VideoAdapter.VideoHolder>() {
@@ -21,7 +22,13 @@ class VideoAdapter(val videoList: ArrayList<VideoModel>, val listener: RecyclerV
     }
 
     override fun onBindViewHolder(holder: VideoHolder, position: Int) {
-        holder.tvVideoName.text = videoList[position].videoName
+        if (videoList[position].videoThumbnail !=null){
+            Glide.with(holder.imageThumbnail)
+                .load(videoList[position].videoThumbnail)
+                .centerCrop()
+                .into(holder.imageThumbnail)
+        }
+        holder.tvVideoName.text = videoList[position].videoName!!.replace("/storage/8427-1f1d/","",ignoreCase = true)
         holder.cardView.setOnClickListener {
             listener.onClick(EnumClicks.CELL,position)
         }

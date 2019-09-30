@@ -72,6 +72,7 @@ class PlayerActivity : AppCompatActivity(), RecyclerViewClickListener {
             do {
                 val videoModel =VideoModel()
                 videoModel.videoName = cursor!!.getString(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA))
+                videoModel.videoThumbnail = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Video.Thumbnails.DATA))
                 videoList.add(videoModel)
             } while (cursor!!.moveToNext())
             cursor.close()
@@ -102,7 +103,9 @@ class PlayerActivity : AppCompatActivity(), RecyclerViewClickListener {
                 }
                 Player.STATE_BUFFERING -> {
                     stateString = "Player.STATE_BUFFERING       -"
-                    progressbar?.visibility = View.VISIBLE
+                    if (::uri.isInitialized){
+                        progressbar?.visibility = View.VISIBLE
+                    }
                 }
                 Player.STATE_READY -> {
                     stateString = "Player.STATE_READY           -"
